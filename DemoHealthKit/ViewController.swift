@@ -7,7 +7,7 @@ enum QuantityType {
     case stepsQuantityType
     case distanceType
     case heartRateType
-    case BPType
+    case BPSystolicType
     
     var value: HKQuantityType {
         
@@ -22,11 +22,13 @@ enum QuantityType {
         case .heartRateType:
             return HKQuantityType.quantityType(forIdentifier: .heartRate)!
             
-        case .BPType:
+        case .BPSystolicType:
             return HKQuantityType.quantityType(forIdentifier: .bloodPressureSystolic)!
         }
     }
 }
+
+//Do not forget to checkmark background fetch in edit scheme -> Run -> Options -> Background fetch
 //MARK:- Class ViewController
 class ViewController: UIViewController {
     
@@ -42,7 +44,7 @@ class ViewController: UIViewController {
     var startOfDay                          = Date() - 7 * 24 * 60 * 60
     let cal                                 = Calendar(identifier: Calendar.Identifier.gregorian)
     var predicate                           : NSPredicate?
-    var steps                               = QuantityType.distanceType
+    var steps                               = QuantityType.stepsQuantityType
     
     let allTypes                            = Set([ HKObjectType.quantityType(forIdentifier: .stepCount)!,
                                                     HKObjectType.quantityType(forIdentifier: .bloodPressureSystolic)!,
@@ -68,6 +70,7 @@ class ViewController: UIViewController {
                 } else {
                     //#4
                     self.getHealthData(type: self.steps)
+                    
                 }
             })
         }
@@ -79,21 +82,23 @@ class ViewController: UIViewController {
             
         case .stepsQuantityType:
             //==> Steps Here <==
-            self.getStepsDistanceData { (data) in
+            self.getStepsDistanceData(quantityType: type) { (data) in
                 
                 DispatchQueue.main.async {
                     self.lblStepsCount.text = "\(data!)"
+                    self.getHealthData(type: QuantityType.distanceType)
                 }
             }
             break
             
         case .distanceType:
             //==> Running + Walking Distance Here <==
-            self.getStepsDistanceData { (walkingValue) in
+            self.getStepsDistanceData(quantityType: type) { (walkingValue) in
                 if let value = walkingValue as? Double {
                     let walkingDistance = value.convert(from: .miles, to: .kilometers)
                     DispatchQueue.main.async {
                         self.lblWalkingDistance.text = "\(Double(round(100*walkingDistance)/100)) KM"
+                        self.getHealthData(type: QuantityType.BPSystolicType)
                     }
                 } else {
                     self.lblWalkingDistance.text = "0 KM"
@@ -101,14 +106,17 @@ class ViewController: UIViewController {
             }
             break
             
-        case .BPType:
+        case .BPSystolicType:
             //==> Blood Pressure of Systolic Type Here <==
-            self.getHealthBPData(HealthQuantityType: steps.value, strUnitType: "mmHg"
+            self.getHealthBPData(HealthQuantityType: type.value, strUnitType: "mmHg"
             ) { (arrHealth) -> Void in
                 DispatchQueue.main.async {
                     if arrHealth != nil {
-                        let tempText = arrHealth?.joined(separator: ", ")
-                        self.lblBP.text = tempText
+                        if let tempText = arrHealth?.joined(separator: ", ") {
+                            self.lblBP.text = "\(tempText) Systolic"
+                        }
+                    } else {
+                        self.lblBP.text = "0 Systolic"
                     }
                 }
             }
@@ -130,7 +138,7 @@ class ViewController: UIViewController {
             dateFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
             
             // Execute query on steps quantity type
-            let query = HKSampleQuery(sampleType:steps.value, predicate:nil, limit:7, sortDescriptors:[sortByTime], resultsHandler:{(query, results, error) in
+            let query = HKSampleQuery(sampleType:QuantityType.BPSystolicType.value, predicate:nil, limit:7, sortDescriptors:[sortByTime], resultsHandler:{(query, results, error) in
                 
                 guard let results = results else {
                     if let errorDescription = error?.localizedDescription
@@ -165,14 +173,14 @@ class ViewController: UIViewController {
     }
     
     //MARK:- Steps & Walking + Running Distance
-    func getStepsDistanceData(completion: @escaping (Any?) -> Void) {
-        let query = HKStatisticsQuery(quantityType: steps.value, quantitySamplePredicate: predicate, options: .cumulativeSum) { (query, result, error) in
+    func getStepsDistanceData(quantityType: QuantityType, completion: @escaping (Any?) -> Void) {
+        let query = HKStatisticsQuery(quantityType: quantityType.value, quantitySamplePredicate: predicate, options: .cumulativeSum) { (query, result, error) in
             
             if (HKHealthStore.isHealthDataAvailable() ){
                 
-                switch self.steps {
+                switch quantityType {
                     
-                case .BPType:
+                case .BPSystolicType:
                     break
                     
                 case .stepsQuantityType:
@@ -223,7 +231,7 @@ class ViewController: UIViewController {
         let startDate = Date() - 7 * 24 * 60 * 60 // start date is a week
         predicate = HKQuery.predicateForSamples(withStart: startDate, end: Date(), options: HKQueryOptions.strictEndDate)
         
-        let squery = HKStatisticsQuery(quantityType: steps.value, quantitySamplePredicate: predicate, options: .discreteAverage, completionHandler: {(query: HKStatisticsQuery,result: HKStatistics?, error: Error?) -> Void in
+        let squery = HKStatisticsQuery(quantityType: QuantityType.heartRateType.value, quantitySamplePredicate: predicate, options: .discreteAverage, completionHandler: {(query: HKStatisticsQuery,result: HKStatistics?, error: Error?) -> Void in
             DispatchQueue.main.async(execute: {() -> Void in
                 let quantity: HKQuantity? = result?.averageQuantity()
                 let beats: Double? = quantity?.doubleValue(for: HKUnit.count().unitDivided(by: HKUnit.minute()))
